@@ -314,7 +314,7 @@ export default function WatermarkSelector({
       {/* 비디오 캔버스 */}
       <div ref={containerRef} className="relative bg-black rounded-lg overflow-hidden">
         {!isVideoLoaded && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
             <div className="text-white text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
               <p>비디오 로딩 중...</p>
@@ -324,7 +324,7 @@ export default function WatermarkSelector({
         <video
           ref={videoRef}
           src={videoUrl}
-          className="w-full opacity-0 absolute"
+          className="absolute inset-0 w-full h-full opacity-0 pointer-events-none"
           controls={false}
           loop
           onLoadedMetadata={() => {
@@ -342,17 +342,32 @@ export default function WatermarkSelector({
         />
         <canvas
           ref={canvasRef}
-          className="w-full select-none"
+          className="w-full select-none relative z-20"
           style={{ 
             display: isVideoLoaded ? 'block' : 'none',
             touchAction: 'none',
-            cursor: `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${brushSize}" height="${brushSize}"><circle cx="${brushSize/2}" cy="${brushSize/2}" r="${brushSize/2}" fill="rgba(239,68,68,0.3)" stroke="red" stroke-width="2"/></svg>') ${brushSize/2} ${brushSize/2}, crosshair`
+            cursor: isPainting ? 'none' : 'crosshair'
           }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
         />
+        {/* 브러시 커서 */}
+        {isPainting && (
+          <div
+            className="fixed pointer-events-none z-50"
+            style={{
+              width: `${brushSize}px`,
+              height: `${brushSize}px`,
+              borderRadius: '50%',
+              border: '2px solid red',
+              backgroundColor: 'rgba(239, 68, 68, 0.3)',
+              transform: 'translate(-50%, -50%)',
+              display: 'none'
+            }}
+          />
+        )}
         <canvas
           ref={maskCanvasRef}
           className="hidden"
