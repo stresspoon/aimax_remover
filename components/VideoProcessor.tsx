@@ -7,7 +7,7 @@ import type { Detection } from "@/app/page";
 
 type Props = {
   videoFile: File;
-  detections: Detection[];
+  selectedBox: { x: number; y: number; w: number; h: number };
   videoResolution: { width: number; height: number };
   onBack: () => void;
   onComplete: () => void;
@@ -15,7 +15,7 @@ type Props = {
 
 export default function VideoProcessor({
   videoFile,
-  detections,
+  selectedBox,
   videoResolution,
   onBack,
   onComplete,
@@ -64,43 +64,6 @@ export default function VideoProcessor({
     setLog((prev) => [...prev.slice(-20), message]);
   };
 
-  const denormalize = (box: [number, number, number, number]) => {
-    const [y1, x1, y2, x2] = box;
-    return {
-      x: Math.round((x1 / 1000) * videoResolution.width),
-      y: Math.round((y1 / 1000) * videoResolution.height),
-      w: Math.round(((x2 - x1) / 1000) * videoResolution.width),
-      h: Math.round(((y2 - y1) / 1000) * videoResolution.height),
-    };
-  };
-
-  // 모든 감지된 박스를 합쳐서 최대 영역 계산
-  const getMergedBox = () => {
-    if (detections.length === 0 || !detections.some(d => d.boxes.length > 0)) {
-      return null;
-    }
-
-    let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
-
-    detections.forEach(detection => {
-      detection.boxes.forEach(box => {
-        const denorm = denormalize(box.box_2d);
-        minX = Math.min(minX, denorm.x);
-        minY = Math.min(minY, denorm.y);
-        maxX = Math.max(maxX, denorm.x + denorm.w);
-        maxY = Math.max(maxY, denorm.y + denorm.h);
-      });
-    });
-
-    // 10% 패딩 추가 (더 확실한 제거)
-    const padding = 10;
-    return {
-      x: Math.max(0, minX - padding),
-      y: Math.max(0, minY - padding),
-      w: Math.min(videoResolution.width - minX + padding, maxX - minX + padding * 2),
-      h: Math.min(videoResolution.height - minY + padding, maxY - minY + padding * 2),
-    };
-  };
 
   const processVideo = async () => {
     if (!ffmpegRef.current || !isLoaded) {
@@ -119,13 +82,8 @@ export default function VideoProcessor({
       await ffmpeg.writeFile("input.mp4", await fetchFile(videoFile));
       addLog("📁 입력 파일 준비 완료");
 
-      // 모든 감지 결과를 합친 최대 영역 계산
-      const mergedBox = getMergedBox();
-      if (!mergedBox) {
-        throw new Error("감지된 워터마크가 없습니다.");
-      }
-
-      const { x, y, w, h } = mergedBox;
+      // 사용자가 선택한 박스 사용
+      const { x, y, w, h } = selectedBox;
       addLog(`🎯 워터마크 영역: x=${x}, y=${y}, w=${w}, h=${h}`);
 
       // 필터 선택
@@ -187,7 +145,7 @@ export default function VideoProcessor({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold text-gray-800 dark:text-white">
-          4. 워터마크 제거
+          3. 워터마크 제거
         </h2>
         <button
           onClick={onBack}
@@ -205,9 +163,9 @@ export default function VideoProcessor({
             <p className="font-medium text-gray-900 dark:text-white">{videoFile.name}</p>
           </div>
           <div>
-            <span className="text-gray-600 dark:text-gray-300">감지 수:</span>
+            <span className="text-gray-600 dark:text-gray-300">워터마크 영역:</span>
             <p className="font-medium text-gray-900 dark:text-white">
-              {detections.length}개 타임스탬프
+              {selectedBox.w} x {selectedBox.h}
             </p>
           </div>
         </div>
@@ -306,7 +264,7 @@ export default function VideoProcessor({
         <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
           <li>• <strong>Delogo</strong>: 주변 픽셀을 분석해 자연스럽게 복원</li>
           <li>• <strong>BoxBlur</strong>: 강력한 블러로 확실하게 가림</li>
-          <li>• 모든 감지 영역을 합쳐 최대 범위 처리 (10% 패딩 추가)</li>
+          <li>• 사용자가 선택한 영역을 전체 영상에서 제거</li>
           <li>• 더 나은 품질: Python 인페인팅 백엔드 (향후 구현)</li>
         </ul>
       </div>
