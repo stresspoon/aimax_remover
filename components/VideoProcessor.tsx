@@ -26,6 +26,8 @@ export default function VideoProcessor({
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const ffmpegRef = useRef<FFmpeg | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [removalMethod, setRemovalMethod] = useState<"delogo" | "boxblur">("delogo");
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     loadFFmpeg();
@@ -72,6 +74,34 @@ export default function VideoProcessor({
     };
   };
 
+  // 모든 감지된 박스를 합쳐서 최대 영역 계산
+  const getMergedBox = () => {
+    if (detections.length === 0 || !detections.some(d => d.boxes.length > 0)) {
+      return null;
+    }
+
+    let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+
+    detections.forEach(detection => {
+      detection.boxes.forEach(box => {
+        const denorm = denormalize(box.box_2d);
+        minX = Math.min(minX, denorm.x);
+        minY = Math.min(minY, denorm.y);
+        maxX = Math.max(maxX, denorm.x + denorm.w);
+        maxY = Math.max(maxY, denorm.y + denorm.h);
+      });
+    });
+
+    // 10% 패딩 추가 (더 확실한 제거)
+    const padding = 10;
+    return {
+      x: Math.max(0, minX - padding),
+      y: Math.max(0, minY - padding),
+      w: Math.min(videoResolution.width - minX + padding, maxX - minX + padding * 2),
+      h: Math.min(videoResolution.height - minY + padding, maxY - minY + padding * 2),
+    };
+  };
+
   const processVideo = async () => {
     if (!ffmpegRef.current || !isLoaded) {
       alert("FFmpeg가 아직 로드되지 않았습니다.");
@@ -89,17 +119,25 @@ export default function VideoProcessor({
       await ffmpeg.writeFile("input.mp4", await fetchFile(videoFile));
       addLog("📁 입력 파일 준비 완료");
 
-      // 워터마크 위치 계산 (첫 번째 감지 결과 사용)
-      let filterComplex = "";
-      if (detections.length > 0 && detections[0].boxes.length > 0) {
-        const firstBox = detections[0].boxes[0];
-        const { x, y, w, h } = denormalize(firstBox.box_2d);
-        
-        // delogo 필터 적용
-        filterComplex = `delogo=x=${x}:y=${y}:w=${w}:h=${h}`;
-        addLog(`🎯 워터마크 위치: x=${x}, y=${y}, w=${w}, h=${h}`);
-      } else {
+      // 모든 감지 결과를 합친 최대 영역 계산
+      const mergedBox = getMergedBox();
+      if (!mergedBox) {
         throw new Error("감지된 워터마크가 없습니다.");
+      }
+
+      const { x, y, w, h } = mergedBox;
+      addLog(`🎯 워터마크 영역: x=${x}, y=${y}, w=${w}, h=${h}`);
+
+      // 필터 선택
+      let filterComplex = "";
+      if (removalMethod === "delogo") {
+        // delogo: 로고 제거 전용 필터 (블러 + 인터폴레이션)
+        filterComplex = `delogo=x=${x}:y=${y}:w=${w}:h=${h}:show=0`;
+        addLog("📐 방법: delogo (로고 제거 최적화)");
+      } else {
+        // boxblur: 강력한 블러 (더 확실한 제거)
+        filterComplex = `crop=iw:ih:0:0,drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=black@0.0:t=fill,boxblur=5:1`;
+        addLog("📐 방법: boxblur (강력한 블러)");
       }
 
       addLog("⚙️ FFmpeg 처리 중...");
@@ -174,6 +212,42 @@ export default function VideoProcessor({
           </div>
         </div>
 
+        {!isProcessing && !downloadUrl && (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                제거 방법 선택:
+              </label>
+              <div className="space-y-2">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    value="delogo"
+                    checked={removalMethod === "delogo"}
+                    onChange={(e) => setRemovalMethod(e.target.value as "delogo")}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    <strong>Delogo</strong> - 로고 제거 전용 (자연스러움 ⭐⭐⭐⭐)
+                  </span>
+                </label>
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    value="boxblur"
+                    checked={removalMethod === "boxblur"}
+                    onChange={(e) => setRemovalMethod(e.target.value as "boxblur")}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    <strong>BoxBlur</strong> - 강력한 블러 (확실함 ⭐⭐⭐⭐⭐)
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white dark:bg-gray-800 rounded p-3 max-h-48 overflow-y-auto font-mono text-xs">
           {log.map((line, idx) => (
             <div key={idx} className="text-gray-700 dark:text-gray-300">
@@ -228,10 +302,12 @@ export default function VideoProcessor({
       )}
 
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-        <h3 className="font-medium text-blue-900 dark:text-blue-200 mb-2">💡 처리 방법</h3>
+        <h3 className="font-medium text-blue-900 dark:text-blue-200 mb-2">💡 처리 방법 안내</h3>
         <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
-          <li>• 클라이언트: FFmpeg.wasm delogo 필터 (빠른 처리)</li>
-          <li>• 서버: Python 인페인팅 백엔드 (고품질, 별도 구현 필요)</li>
+          <li>• <strong>Delogo</strong>: 주변 픽셀을 분석해 자연스럽게 복원</li>
+          <li>• <strong>BoxBlur</strong>: 강력한 블러로 확실하게 가림</li>
+          <li>• 모든 감지 영역을 합쳐 최대 범위 처리 (10% 패딩 추가)</li>
+          <li>• 더 나은 품질: Python 인페인팅 백엔드 (향후 구현)</li>
         </ul>
       </div>
     </div>
