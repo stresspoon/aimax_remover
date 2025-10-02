@@ -1,17 +1,27 @@
 # 🎬 AI Max Remover - 워터마크 자동 제거 웹앱
 
-Gemini 2.5 Flash 모델을 활용한 AI 기반 이동 워터마크 자동 감지 및 제거 웹 애플리케이션
+Gemini 2.0 Flash API를 활용한 AI 기반 이동 워터마크 자동 추적 및 제거 웹 애플리케이션
 
 ## ✨ 주요 기능
 
+### 🎨 직관적인 인터페이스
 - **영상 업로드**: 드래그 앤 드롭으로 간편한 영상 업로드
-- **2가지 선택 모드**:
-  - 📍 **수동 선택**: 고정 위치 워터마크 (빠름)
-  - 🤖 **AI 추적**: 이동하는 워터마크 자동 추적 (Gemini API)
-- **빠른 선택 버튼**: 일반적인 워터마크 위치 원클릭 선택
-- **실시간 프리뷰**: 비디오 재생하며 워터마크 위치 확인
-- **워터마크 제거**: FFmpeg.wasm 기반 클라이언트 처리 (2가지 방법)
-- **결과 다운로드**: 처리된 영상 즉시 다운로드
+- **브러시 페인팅**: 마우스로 워터마크 영역을 칠하여 선택
+- **브러시 크기 조절**: 5px ~ 50px 자유롭게 조정
+- **실시간 프리뷰**: 편집/프리뷰 모드로 제거 결과 미리 확인
+
+### 🤖 AI 추적 기능 (NEW!)
+- **수동 모드**: 고정 위치 워터마크 빠른 제거
+- **AI 추적 모드**: 이동하는 워터마크를 프레임별로 자동 추적
+  - 한 번 칠하면 전체 영상에서 자동으로 워터마크 위치 추적
+  - 타임스탬프별 다른 위치의 워터마크 동시 제거
+  - Gemini 2.0 Flash API 기반 정확한 추적
+
+### 🎬 고급 처리 옵션
+- **Delogo 필터**: 주변 픽셀 분석으로 자연스러운 복원
+- **BoxBlur 필터**: 선택 영역만 강력한 블러 (배경 선명 유지)
+- **처리 결과 미리보기**: 다운로드 전 비디오 플레이어로 확인
+- **즉시 다운로드**: 만족스러우면 바로 다운로드
 
 ## 🚀 시작하기
 
@@ -47,8 +57,9 @@ npm run dev
 
 - **프레임워크**: Next.js 14 + TypeScript
 - **스타일링**: Tailwind CSS
-- **영상 처리**: FFmpeg.wasm (delogo / boxblur)
-- **UI/UX**: Canvas 기반 드래그 선택
+- **AI 모델**: Google Gemini 2.0 Flash API
+- **영상 처리**: FFmpeg.wasm (delogo / boxblur 필터)
+- **UI/UX**: Canvas 기반 브러시 페인팅
 - **보안**: COOP/COEP 헤더 설정
 
 ## 🔧 핵심 구현 사항
@@ -69,26 +80,61 @@ function denormalize(box, width, height) {
 }
 ```
 
-### 2. 사용자 영역 선택
+### 2. 브러시 페인팅 선택
 
-Canvas에서 마우스 드래그로 워터마크 영역 선택:
+Canvas에서 마우스로 워터마크 영역을 칠함:
 
 ```typescript
-const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-  const pos = getMousePos(e);
-  setIsDrawing(true);
-  setStartPos(pos);
+const paintPixel = (x: number, y: number) => {
+  setPaintedPixels(prev => {
+    const newSet = new Set(prev);
+    for (let dx = -brushSize/2; dx <= brushSize/2; dx++) {
+      for (let dy = -brushSize/2; dy <= brushSize/2; dy++) {
+        newSet.add(`${x + dx},${y + dy}`);
+      }
+    }
+    return newSet;
+  });
 };
 ```
 
-### 3. FFmpeg 워터마크 제거
+### 3. AI 워터마크 추적
+
+Gemini API로 프레임별 워터마크 위치 추적:
 
 ```typescript
+// API 호출
+const response = await fetch("/api/track-watermark", {
+  method: "POST",
+  body: formData, // video + referenceBox
+});
+
+// 타임스탬프별 다른 위치 필터 적용
+trackingData.forEach((track) => {
+  const { x, y, w, h } = track.box;
+  const timeInSeconds = parseTimestamp(track.ts);
+  filters.push(
+    `delogo=x=${x}:y=${y}:w=${w}:h=${h}:band=2:enable='between(t,${timeInSeconds},${timeInSeconds + 0.5})'`
+  );
+});
+```
+
+### 4. FFmpeg 워터마크 제거
+
+```typescript
+// 수동 모드: 고정 위치
 await ffmpeg.exec([
   "-i", "input.mp4",
-  "-vf", `delogo=x=${x}:y=${y}:w=${w}:h=${h}`,
-  "-c:v", "libx264",
-  "-preset", "fast",
+  "-vf", `delogo=x=${x}:y=${y}:w=${w}:h=${h}:band=2`,
+  "-c:v", "libx264", "-preset", "fast",
+  "output.mp4",
+]);
+
+// AI 추적 모드: 타임스탬프별 필터 체인
+await ffmpeg.exec([
+  "-i", "input.mp4",
+  "-vf", filterChain, // 여러 delogo 필터 연결
+  "-c:v", "libx264", "-preset", "fast",
   "output.mp4",
 ]);
 ```
@@ -103,10 +149,11 @@ aimax_remover/
 │   └── globals.css           # 전역 스타일
 ├── components/
 │   ├── VideoUploader.tsx     # 영상 업로드
-│   ├── WatermarkSelector.tsx # 수동 영역 선택 (Canvas)
+│   ├── WatermarkSelector.tsx # 브러시 페인팅 선택 + AI 추적
 │   └── VideoProcessor.tsx    # 워터마크 제거 (FFmpeg)
-├── utils/
-│   └── coordinates.ts        # 좌표 변환 유틸
+├── app/api/
+│   └── track-watermark/      # Gemini API 서버 엔드포인트
+│       └── route.ts
 └── next.config.js            # COOP/COEP 헤더 설정
 ```
 
@@ -147,18 +194,62 @@ Environment Variables 설정:
 
 ## 🎯 사용 흐름
 
+### 📍 수동 모드 (고정 워터마크)
 ```
-1. 영상 업로드 → 2. 워터마크 영역 선택 → 3. 제거 방법 선택 → 4. 다운로드
-   (드래그 앤 드롭)    (마우스 드래그)         (Delogo/BoxBlur)      (즉시 다운로드)
+1. 영상 업로드 
+   ↓
+2. 수동 선택 모드
+   ↓
+3. 브러시로 워터마크 칠하기
+   ↓
+4. 👁️ 프리뷰 버튼으로 확인
+   ↓
+5. 선택 완료
+   ↓
+6. 제거 방법 선택 (Delogo/BoxBlur)
+   ↓
+7. 처리 후 미리보기
+   ↓
+8. 다운로드
 ```
+
+### 🤖 AI 추적 모드 (이동 워터마크)
+```
+1. 영상 업로드
+   ↓
+2. AI 추적 모드 선택
+   ↓
+3. 첫 프레임에서 워터마크 칠하기
+   ↓
+4. AI 추적 시작 (자동으로 전체 영상 분석)
+   ↓
+5. 타임스탬프별 위치 데이터 생성
+   ↓
+6. 제거 방법 선택 (Delogo 권장)
+   ↓
+7. 프레임별 다른 위치 자동 제거
+   ↓
+8. 처리 후 미리보기
+   ↓
+9. 다운로드
+```
+
+## ✅ 구현 완료
+
+- ✅ AI 추적 기능 (Gemini 2.0 Flash)
+- ✅ 브러시 페인팅 인터페이스
+- ✅ 프리뷰 모드 (편집/검정색)
+- ✅ 처리 결과 미리보기
+- ✅ 타임스탬프별 필터 적용
+- ✅ 선택 영역만 블러 처리
 
 ## 🚧 향후 개발
 
-- [ ] AI 자동 감지 옵션 추가 (선택적)
 - [ ] 서버 사이드 Python 인페인팅 백엔드 (고품질)
 - [ ] 다중 영역 선택 (여러 워터마크 동시 제거)
 - [ ] 배치 처리 기능
 - [ ] 처리 히스토리 관리
+- [ ] GPU 가속 처리
 
 ## 📄 라이선스
 

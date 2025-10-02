@@ -2,11 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 
+type TrackingData = {
+  ts: string;
+  box: { x: number; y: number; w: number; h: number };
+  confidence: number;
+}[];
+
 type Props = {
   videoFile: File;
   videoDuration: number;
   videoResolution: { width: number; height: number };
-  onSelectionComplete: (box: { x: number; y: number; w: number; h: number }) => void;
+  onSelectionComplete: (
+    box: { x: number; y: number; w: number; h: number },
+    trackingData?: TrackingData,
+    isAiTracked?: boolean
+  ) => void;
   onBack: () => void;
 };
 
@@ -202,18 +212,23 @@ export default function WatermarkSelector({
       }
 
       const data = await response.json();
+      const trackingData: TrackingData = data.trackingData;
+      
       setTrackProgress(100);
 
-      // 추적 데이터를 사용하여 처리
-      // 여기서는 간단히 첫 번째 위치를 사용하거나, 모든 위치의 평균/최대 범위를 계산
-      alert(`✅ AI 추적 완료! ${data.trackingData.length}개 프레임에서 워터마크를 발견했습니다.`);
-      
-      // 실제 구현: 모든 추적 데이터를 다음 단계로 전달
-      // 지금은 참조 박스를 그대로 전달
-      onSelectionComplete(referenceBox);
+      if (trackingData && trackingData.length > 0) {
+        alert(`✅ AI 추적 완료! ${trackingData.length}개 프레임에서 워터마크를 발견했습니다.`);
+        
+        // 추적 데이터를 다음 단계로 전달
+        onSelectionComplete(referenceBox, trackingData, true);
+      } else {
+        throw new Error("워터마크 추적 결과가 없습니다.");
+      }
     } catch (error) {
       console.error("Tracking error:", error);
-      alert(error instanceof Error ? error.message : "워터마크 추적 중 오류가 발생했습니다.");
+      alert(error instanceof Error ? error.message : "워터마크 추적 중 오류가 발생했습니다. 수동 모드로 진행하시겠습니까?");
+      // 실패 시 수동 모드로 전환
+      onSelectionComplete(referenceBox);
     } finally {
       setIsTracking(false);
     }

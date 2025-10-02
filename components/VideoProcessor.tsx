@@ -5,9 +5,17 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile, toBlobURL } from "@ffmpeg/util";
 import type { Detection } from "@/app/page";
 
+type TrackingData = {
+  ts: string;
+  box: { x: number; y: number; w: number; h: number };
+  confidence: number;
+}[];
+
 type Props = {
   videoFile: File;
   selectedBox: { x: number; y: number; w: number; h: number };
+  trackingData?: TrackingData | null;
+  isAiTracked?: boolean;
   videoResolution: { width: number; height: number };
   onBack: () => void;
   onComplete: () => void;
@@ -16,6 +24,8 @@ type Props = {
 export default function VideoProcessor({
   videoFile,
   selectedBox,
+  trackingData,
+  isAiTracked,
   videoResolution,
   onBack,
   onComplete,
@@ -83,20 +93,47 @@ export default function VideoProcessor({
       await ffmpeg.writeFile("input.mp4", await fetchFile(videoFile));
       addLog("📁 입력 파일 준비 완료");
 
-      // 사용자가 선택한 박스 사용
-      const { x, y, w, h } = selectedBox;
-      addLog(`🎯 워터마크 영역: x=${x}, y=${y}, w=${w}, h=${h}`);
-
-      // 필터 선택
+      // AI 추적 데이터가 있으면 타임스탬프별 필터 적용
       let filterComplex = "";
-      if (removalMethod === "delogo") {
-        // delogo: 로고 제거 전용 필터 (블러 + 인터폴레이션)
-        filterComplex = `delogo=x=${x}:y=${y}:w=${w}:h=${h}:band=2`;
-        addLog("📐 방법: delogo (로고 제거 최적화)");
+      
+      if (isAiTracked && trackingData && trackingData.length > 0) {
+        addLog(`🤖 AI 추적 모드: ${trackingData.length}개 프레임 처리`);
+        
+        // 타임스탬프별로 다른 위치의 워터마크 제거
+        const filters: string[] = [];
+        
+        trackingData.forEach((track, idx) => {
+          const { x, y, w, h } = track.box;
+          const [mins, secs] = track.ts.split(":").map(Number);
+          const timeInSeconds = mins * 60 + secs;
+          
+          if (removalMethod === "delogo") {
+            // 각 타임스탬프에서 활성화되는 delogo 필터
+            filters.push(`delogo=x=${x}:y=${y}:w=${w}:h=${h}:band=2:enable='between(t,${timeInSeconds},${timeInSeconds + 0.5})'`);
+          }
+        });
+        
+        if (removalMethod === "delogo") {
+          filterComplex = filters.join(',');
+          addLog("📐 방법: delogo (타임스탬프별 추적)");
+        } else {
+          // BoxBlur는 단순화 (첫 번째 위치만 사용)
+          const { x, y, w, h } = trackingData[0].box;
+          filterComplex = `[0:v]split[original][blur];[blur]crop=${w}:${h}:${x}:${y},boxblur=10:2[blurred];[original][blurred]overlay=${x}:${y}`;
+          addLog("📐 방법: boxblur (첫 번째 위치 기준)");
+        }
       } else {
-        // boxblur: 특정 영역만 강력한 블러 (crop으로 해당 영역만 추출 후 블러)
-        filterComplex = `[0:v]split[original][blur];[blur]crop=${w}:${h}:${x}:${y},boxblur=10:2[blurred];[original][blurred]overlay=${x}:${y}`;
-        addLog("📐 방법: boxblur (선택 영역만 블러)");
+        // 수동 모드: 고정 위치
+        const { x, y, w, h } = selectedBox;
+        addLog(`🎯 워터마크 영역: x=${x}, y=${y}, w=${w}, h=${h}`);
+
+        if (removalMethod === "delogo") {
+          filterComplex = `delogo=x=${x}:y=${y}:w=${w}:h=${h}:band=2`;
+          addLog("📐 방법: delogo (로고 제거 최적화)");
+        } else {
+          filterComplex = `[0:v]split[original][blur];[blur]crop=${w}:${h}:${x}:${y},boxblur=10:2[blurred];[original][blurred]overlay=${x}:${y}`;
+          addLog("📐 방법: boxblur (선택 영역만 블러)");
+        }
       }
 
       addLog("⚙️ FFmpeg 처리 중...");
@@ -159,15 +196,21 @@ export default function VideoProcessor({
       </div>
 
       <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6 space-y-4">
-        <div className="grid grid-cols-2 gap-4 text-sm">
+        <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
             <span className="text-gray-600 dark:text-gray-300">처리 대상:</span>
-            <p className="font-medium text-gray-900 dark:text-white">{videoFile.name}</p>
+            <p className="font-medium text-gray-900 dark:text-white truncate">{videoFile.name}</p>
           </div>
           <div>
             <span className="text-gray-600 dark:text-gray-300">워터마크 영역:</span>
             <p className="font-medium text-gray-900 dark:text-white">
               {selectedBox.w} x {selectedBox.h}
+            </p>
+          </div>
+          <div>
+            <span className="text-gray-600 dark:text-gray-300">모드:</span>
+            <p className="font-medium text-gray-900 dark:text-white">
+              {isAiTracked ? `🤖 AI 추적 (${trackingData?.length || 0}프레임)` : "📍 수동 선택"}
             </p>
           </div>
         </div>
@@ -283,6 +326,11 @@ export default function VideoProcessor({
         <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
           <li>• <strong>Delogo</strong>: 주변 픽셀로 워터마크 영역을 자연스럽게 채움</li>
           <li>• <strong>BoxBlur</strong>: 선택한 영역만 강력한 블러 처리 (배경은 선명)</li>
+          {isAiTracked && (
+            <li className="text-purple-700 dark:text-purple-300">
+              • <strong>🤖 AI 추적 모드</strong>: 이동하는 워터마크를 자동으로 따라가며 제거
+            </li>
+          )}
           <li>• 처리 후 미리보기로 결과 확인 가능</li>
           <li>• 만족스러우면 다운로드, 아니면 다시 처리</li>
         </ul>

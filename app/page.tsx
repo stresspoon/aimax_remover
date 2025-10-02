@@ -14,12 +14,20 @@ export type Detection = {
   }>;
 };
 
+export type TrackingData = {
+  ts: string;
+  box: { x: number; y: number; w: number; h: number };
+  confidence: number;
+}[];
+
 export default function Home() {
   const [step, setStep] = useState<"upload" | "select" | "process">("upload");
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoDuration, setVideoDuration] = useState<number>(0);
   const [videoResolution, setVideoResolution] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [selectedBox, setSelectedBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [trackingData, setTrackingData] = useState<TrackingData | null>(null);
+  const [isAiTracked, setIsAiTracked] = useState(false);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 py-12 px-4">
@@ -78,8 +86,10 @@ export default function Home() {
               videoFile={videoFile}
               videoDuration={videoDuration}
               videoResolution={videoResolution}
-              onSelectionComplete={(box) => {
+              onSelectionComplete={(box, tracking, isTracked) => {
                 setSelectedBox(box);
+                setTrackingData(tracking || null);
+                setIsAiTracked(isTracked || false);
                 setStep("process");
               }}
               onBack={() => setStep("upload")}
@@ -90,6 +100,8 @@ export default function Home() {
             <VideoProcessor
               videoFile={videoFile}
               selectedBox={selectedBox}
+              trackingData={trackingData}
+              isAiTracked={isAiTracked}
               videoResolution={videoResolution}
               onBack={() => setStep("select")}
               onComplete={() => {
@@ -97,6 +109,8 @@ export default function Home() {
                 setStep("upload");
                 setVideoFile(null);
                 setSelectedBox(null);
+                setTrackingData(null);
+                setIsAiTracked(false);
               }}
             />
           )}
