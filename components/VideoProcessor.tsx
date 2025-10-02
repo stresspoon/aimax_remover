@@ -24,6 +24,7 @@ export default function VideoProcessor({
   const [progress, setProgress] = useState(0);
   const [log, setLog] = useState<string[]>([]);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const ffmpegRef = useRef<FFmpeg | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [removalMethod, setRemovalMethod] = useState<"delogo" | "boxblur">("delogo");
@@ -90,12 +91,12 @@ export default function VideoProcessor({
       let filterComplex = "";
       if (removalMethod === "delogo") {
         // delogo: 로고 제거 전용 필터 (블러 + 인터폴레이션)
-        filterComplex = `delogo=x=${x}:y=${y}:w=${w}:h=${h}:show=0`;
+        filterComplex = `delogo=x=${x}:y=${y}:w=${w}:h=${h}:band=2`;
         addLog("📐 방법: delogo (로고 제거 최적화)");
       } else {
-        // boxblur: 강력한 블러 (더 확실한 제거)
-        filterComplex = `crop=iw:ih:0:0,drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=black@0.0:t=fill,boxblur=5:1`;
-        addLog("📐 방법: boxblur (강력한 블러)");
+        // boxblur: 특정 영역만 강력한 블러 (crop으로 해당 영역만 추출 후 블러)
+        filterComplex = `[0:v]split[original][blur];[blur]crop=${w}:${h}:${x}:${y},boxblur=10:2[blurred];[original][blurred]overlay=${x}:${y}`;
+        addLog("📐 방법: boxblur (선택 영역만 블러)");
       }
 
       addLog("⚙️ FFmpeg 처리 중...");
@@ -121,10 +122,11 @@ export default function VideoProcessor({
       const data = await ffmpeg.readFile("output.mp4");
       const blob = new Blob([data as BlobPart], { type: "video/mp4" });
       const url = URL.createObjectURL(blob);
+      setPreviewUrl(url);
       setDownloadUrl(url);
 
       setProgress(100);
-      addLog("🎉 다운로드 준비 완료");
+      addLog("🎉 처리 완료! 미리보기를 확인하세요");
     } catch (error) {
       console.error("Processing error:", error);
       addLog(`❌ 오류: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
@@ -230,6 +232,23 @@ export default function VideoProcessor({
         </div>
       )}
 
+      {/* 미리보기 영상 */}
+      {previewUrl && (
+        <div className="space-y-4">
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+            <h3 className="font-medium text-green-900 dark:text-green-200 mb-3">
+              ✅ 처리 완료! 결과 미리보기
+            </h3>
+            <video
+              src={previewUrl}
+              controls
+              loop
+              className="w-full rounded-lg bg-black"
+            />
+          </div>
+        </div>
+      )}
+
       {!downloadUrl ? (
         <button
           onClick={processVideo}
@@ -262,10 +281,10 @@ export default function VideoProcessor({
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
         <h3 className="font-medium text-blue-900 dark:text-blue-200 mb-2">💡 처리 방법 안내</h3>
         <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
-          <li>• <strong>Delogo</strong>: 주변 픽셀을 분석해 자연스럽게 복원</li>
-          <li>• <strong>BoxBlur</strong>: 강력한 블러로 확실하게 가림</li>
-          <li>• 사용자가 선택한 영역을 전체 영상에서 제거</li>
-          <li>• 더 나은 품질: Python 인페인팅 백엔드 (향후 구현)</li>
+          <li>• <strong>Delogo</strong>: 주변 픽셀로 워터마크 영역을 자연스럽게 채움</li>
+          <li>• <strong>BoxBlur</strong>: 선택한 영역만 강력한 블러 처리 (배경은 선명)</li>
+          <li>• 처리 후 미리보기로 결과 확인 가능</li>
+          <li>• 만족스러우면 다운로드, 아니면 다시 처리</li>
         </ul>
       </div>
     </div>

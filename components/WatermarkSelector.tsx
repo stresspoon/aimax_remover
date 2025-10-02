@@ -25,6 +25,7 @@ export default function WatermarkSelector({
   const [selectionMode, setSelectionMode] = useState<"manual" | "ai-track">("manual");
   const [isTracking, setIsTracking] = useState(false);
   const [trackProgress, setTrackProgress] = useState(0);
+  const [previewMode, setPreviewMode] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -62,11 +63,21 @@ export default function WatermarkSelector({
 
       // 칠한 영역 그리기
       if (paintedPixels.size > 0) {
-        ctx.fillStyle = "rgba(239, 68, 68, 0.5)";
-        paintedPixels.forEach(pixel => {
-          const [x, y] = pixel.split(',').map(Number);
-          ctx.fillRect(x - brushSize/2, y - brushSize/2, brushSize, brushSize);
-        });
+        if (previewMode) {
+          // 프리뷰 모드: 검정색으로 표시 (워터마크가 제거된 모습)
+          ctx.fillStyle = "#000000";
+          paintedPixels.forEach(pixel => {
+            const [x, y] = pixel.split(',').map(Number);
+            ctx.fillRect(x - brushSize/2, y - brushSize/2, brushSize, brushSize);
+          });
+        } else {
+          // 편집 모드: 빨간색 반투명으로 표시
+          ctx.fillStyle = "rgba(239, 68, 68, 0.5)";
+          paintedPixels.forEach(pixel => {
+            const [x, y] = pixel.split(',').map(Number);
+            ctx.fillRect(x - brushSize/2, y - brushSize/2, brushSize, brushSize);
+          });
+        }
       }
 
       animationFrameRef.current = requestAnimationFrame(draw);
@@ -79,7 +90,7 @@ export default function WatermarkSelector({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [paintedPixels, isVideoLoaded, brushSize]);
+  }, [paintedPixels, isVideoLoaded, brushSize, previewMode]);
 
   const getMousePos = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -375,7 +386,7 @@ export default function WatermarkSelector({
       </div>
 
       {/* 비디오 컨트롤 */}
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-4 flex-wrap gap-2">
         <button
           onClick={() => videoRef.current?.play()}
           className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
@@ -387,6 +398,13 @@ export default function WatermarkSelector({
           className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm"
         >
           ⏸️ 일시정지
+        </button>
+        <button
+          onClick={() => setPreviewMode(!previewMode)}
+          disabled={paintedPixels.size === 0}
+          className={`px-4 py-2 ${previewMode ? 'bg-purple-600' : 'bg-blue-600'} hover:opacity-90 disabled:bg-gray-400 text-white rounded-lg text-sm`}
+        >
+          {previewMode ? "👁️ 편집 모드" : "👁️ 프리뷰 (검정색)"}
         </button>
         <button
           onClick={handleReset}
