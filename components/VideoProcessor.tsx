@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile, toBlobURL } from "@ffmpeg/util";
+import { toBlobURL } from "@ffmpeg/util";
 import type { Detection } from "@/app/page";
 
 type TrackingData = {
@@ -89,9 +89,11 @@ export default function VideoProcessor({
     try {
       const ffmpeg = ffmpegRef.current;
 
-      // 입력 파일 작성
-      await ffmpeg.writeFile("input.mp4", await fetchFile(videoFile));
-      addLog("📁 입력 파일 준비 완료");
+      // 입력 파일 작성 (File 객체를 직접 Uint8Array로 변환)
+      addLog("📁 입력 파일 읽는 중...");
+      const fileData = await videoFile.arrayBuffer();
+      await ffmpeg.writeFile("input.mp4", new Uint8Array(fileData));
+      addLog("✅ 입력 파일 준비 완료");
 
       // AI 추적 데이터가 있으면 타임스탬프별 필터 적용
       let filterComplex = "";
@@ -286,7 +288,13 @@ export default function VideoProcessor({
               src={previewUrl}
               controls
               loop
+              preload="auto"
+              playsInline
               className="w-full rounded-lg bg-black"
+              onError={(e) => {
+                console.error("Video preview error:", e);
+                addLog("⚠️ 미리보기 로드 실패 (다운로드는 가능)");
+              }}
             />
           </div>
         </div>
