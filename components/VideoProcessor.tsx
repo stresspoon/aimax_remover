@@ -123,7 +123,7 @@ export default function VideoProcessor({
 
       // 출력 파일 읽기
       const data = await ffmpeg.readFile("output.mp4");
-      const blob = new Blob([data], { type: "video/mp4" });
+      const blob = new Blob([data as BlobPart], { type: "video/mp4" });
       const url = URL.createObjectURL(blob);
       setDownloadUrl(url);
 
