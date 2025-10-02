@@ -18,15 +18,16 @@ export default function WatermarkSelector({
   onBack,
 }: Props) {
   const [videoUrl, setVideoUrl] = useState<string>("");
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
-  const [selectedBox, setSelectedBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [isPainting, setIsPainting] = useState(false);
+  const [paintedPixels, setPaintedPixels] = useState<Set<string>>(new Set());
+  const [brushSize, setBrushSize] = useState(20);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const [selectionMode, setSelectionMode] = useState<"manual" | "ai-track">("manual");
   const [isTracking, setIsTracking] = useState(false);
   const [trackProgress, setTrackProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const maskCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number>();
 
@@ -36,7 +37,7 @@ export default function WatermarkSelector({
     return () => URL.revokeObjectURL(url);
   }, [videoFile]);
 
-  // 캔버스에 비디오 프레임과 박스 그리기
+  // 캔버스에 비디오 프레임과 칠한 영역 그리기
   useEffect(() => {
     if (!canvasRef.current || !videoRef.current || !isVideoLoaded) return;
 
@@ -50,25 +51,22 @@ export default function WatermarkSelector({
       if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
+        if (maskCanvasRef.current) {
+          maskCanvasRef.current.width = video.videoWidth;
+          maskCanvasRef.current.height = video.videoHeight;
+        }
       }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // 선택된 박스 그리기
-      if (selectedBox) {
-        ctx.strokeStyle = "#ef4444";
-        ctx.lineWidth = 3;
-        ctx.strokeRect(selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h);
-        
-        // 반투명 오버레이
-        ctx.fillStyle = "rgba(239, 68, 68, 0.2)";
-        ctx.fillRect(selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h);
-
-        // 라벨
-        ctx.fillStyle = "#ef4444";
-        ctx.font = "bold 16px Arial";
-        ctx.fillText("워터마크 영역", selectedBox.x, selectedBox.y - 10);
+      // 칠한 영역 그리기
+      if (paintedPixels.size > 0) {
+        ctx.fillStyle = "rgba(239, 68, 68, 0.5)";
+        paintedPixels.forEach(pixel => {
+          const [x, y] = pixel.split(',').map(Number);
+          ctx.fillRect(x - brushSize/2, y - brushSize/2, brushSize, brushSize);
+        });
       }
 
       animationFrameRef.current = requestAnimationFrame(draw);
@@ -81,79 +79,90 @@ export default function WatermarkSelector({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [selectedBox, isVideoLoaded]);
+  }, [paintedPixels, isVideoLoaded, brushSize]);
 
   const getMousePos = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
 
     const rect = canvas.getBoundingClientRect();
-    // Canvas의 실제 크기와 표시 크기 비율 계산
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-    
-    console.log('Mouse pos:', { x, y, canvasWidth: canvas.width, canvasHeight: canvas.height });
+    const x = Math.round((e.clientX - rect.left) * scaleX);
+    const y = Math.round((e.clientY - rect.top) * scaleY);
     
     return { x, y };
   };
 
+  const paintPixel = (x: number, y: number) => {
+    setPaintedPixels(prev => {
+      const newSet = new Set(prev);
+      // 브러시 크기만큼 주변도 칠함
+      for (let dx = -Math.floor(brushSize/2); dx <= Math.floor(brushSize/2); dx++) {
+        for (let dy = -Math.floor(brushSize/2); dy <= Math.floor(brushSize/2); dy++) {
+          const px = x + dx;
+          const py = y + dy;
+          if (px >= 0 && py >= 0) {
+            newSet.add(`${px},${py}`);
+          }
+        }
+      }
+      return newSet;
+    });
+  };
+
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
+    setIsPainting(true);
     const pos = getMousePos(e);
-    console.log('Mouse down at:', pos);
-    setIsDrawing(true);
-    setStartPos(pos);
-    setSelectedBox(null);
+    paintPixel(pos.x, pos.y);
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !startPos) return;
+    if (!isPainting) return;
     e.preventDefault();
-
     const pos = getMousePos(e);
-    const box = {
-      x: Math.min(startPos.x, pos.x),
-      y: Math.min(startPos.y, pos.y),
-      w: Math.abs(pos.x - startPos.x),
-      h: Math.abs(pos.y - startPos.y),
-    };
-    console.log('Drawing box:', box);
-    setSelectedBox(box);
+    paintPixel(pos.x, pos.y);
   };
 
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    console.log('Mouse up, final box:', selectedBox);
-    setIsDrawing(false);
+    setIsPainting(false);
   };
 
   const handleConfirm = async () => {
-    if (!selectedBox || !canvasRef.current) {
-      alert("워터마크 영역을 선택해주세요.");
+    if (paintedPixels.size === 0) {
+      alert("워터마크 영역을 칠해주세요.");
       return;
     }
 
-    // 캔버스 크기를 실제 비디오 해상도로 변환
-    const canvas = canvasRef.current;
-    const scaleX = videoResolution.width / canvas.width;
-    const scaleY = videoResolution.height / canvas.height;
+    // 칠한 영역의 경계 박스 계산
+    let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+    
+    paintedPixels.forEach(pixel => {
+      const [x, y] = pixel.split(',').map(Number);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    });
 
-    const actualBox = {
-      x: Math.round(selectedBox.x * scaleX),
-      y: Math.round(selectedBox.y * scaleY),
-      w: Math.round(selectedBox.w * scaleX),
-      h: Math.round(selectedBox.h * scaleY),
+    const boundingBox = {
+      x: minX,
+      y: minY,
+      w: maxX - minX,
+      h: maxY - minY,
     };
+
+    console.log('Bounding box:', boundingBox);
 
     // AI 추적 모드인 경우 추적 실행
     if (selectionMode === "ai-track") {
-      await trackWatermark(actualBox);
+      await trackWatermark(boundingBox);
     } else {
       // 수동 모드는 바로 완료
-      onSelectionComplete(actualBox);
+      onSelectionComplete(boundingBox);
     }
   };
 
@@ -200,8 +209,7 @@ export default function WatermarkSelector({
   };
 
   const handleReset = () => {
-    setSelectedBox(null);
-    setStartPos(null);
+    setPaintedPixels(new Set());
   };
 
 
@@ -263,10 +271,25 @@ export default function WatermarkSelector({
         </p>
       </div>
 
-      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 space-y-3">
         <p className="text-sm text-yellow-800 dark:text-yellow-200">
-          💡 <strong>사용 방법:</strong> 비디오에서 워터마크가 있는 영역을 마우스로 드래그하여 선택하세요.
+          💡 <strong>사용 방법:</strong> 비디오에서 워터마크가 있는 영역을 마우스로 칠하세요.
         </p>
+        
+        {/* 브러시 크기 조절 */}
+        <div>
+          <label className="block text-xs font-medium text-yellow-700 dark:text-yellow-300 mb-1">
+            브러시 크기: {brushSize}px
+          </label>
+          <input
+            type="range"
+            min="5"
+            max="50"
+            value={brushSize}
+            onChange={(e) => setBrushSize(Number(e.target.value))}
+            className="w-full"
+          />
+        </div>
       </div>
 
       <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6 space-y-4">
@@ -319,15 +342,20 @@ export default function WatermarkSelector({
         />
         <canvas
           ref={canvasRef}
-          className="w-full cursor-crosshair select-none"
+          className="w-full select-none"
           style={{ 
             display: isVideoLoaded ? 'block' : 'none',
-            touchAction: 'none'
+            touchAction: 'none',
+            cursor: `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${brushSize}" height="${brushSize}"><circle cx="${brushSize/2}" cy="${brushSize/2}" r="${brushSize/2}" fill="rgba(239,68,68,0.3)" stroke="red" stroke-width="2"/></svg>') ${brushSize/2} ${brushSize/2}, crosshair`
           }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+        />
+        <canvas
+          ref={maskCanvasRef}
+          className="hidden"
         />
       </div>
 
@@ -347,27 +375,22 @@ export default function WatermarkSelector({
         </button>
         <button
           onClick={handleReset}
-          disabled={!selectedBox}
+          disabled={paintedPixels.size === 0}
           className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white rounded-lg text-sm"
         >
-          🔄 다시 선택
+          🔄 지우기
         </button>
       </div>
 
       {/* 선택 정보 */}
-      {selectedBox && (
+      {paintedPixels.size > 0 && (
         <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
           <h3 className="font-medium text-green-900 dark:text-green-200 mb-2">
-            ✅ 워터마크 영역 선택됨
+            ✅ 워터마크 영역 칠함
           </h3>
-          <div className="grid grid-cols-2 gap-2 text-sm text-green-800 dark:text-green-300">
-            <div>
-              <span className="font-medium">위치:</span> ({Math.round(selectedBox.x)}, {Math.round(selectedBox.y)})
-            </div>
-            <div>
-              <span className="font-medium">크기:</span> {Math.round(selectedBox.w)} x {Math.round(selectedBox.h)}
-            </div>
-          </div>
+          <p className="text-sm text-green-800 dark:text-green-300">
+            칠한 픽셀 수: {paintedPixels.size.toLocaleString()}개
+          </p>
         </div>
       )}
 
@@ -389,16 +412,16 @@ export default function WatermarkSelector({
 
       <button
         onClick={handleConfirm}
-        disabled={!selectedBox || isTracking}
+        disabled={paintedPixels.size === 0 || isTracking}
         className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors"
       >
         {isTracking
           ? "🤖 AI 추적 중..."
-          : selectedBox
+          : paintedPixels.size > 0
           ? selectionMode === "ai-track"
             ? "🤖 AI 추적 시작 - 다음 단계"
             : "✅ 선택 완료 - 다음 단계"
-          : "⬆️ 워터마크 영역을 선택하세요"}
+          : "🖌️ 워터마크 영역을 칠하세요"}
       </button>
     </div>
   );
