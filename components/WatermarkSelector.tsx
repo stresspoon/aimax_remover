@@ -21,9 +21,11 @@ export default function WatermarkSelector({
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
   const [selectedBox, setSelectedBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const animationFrameRef = useRef<number>();
 
   useEffect(() => {
     const url = URL.createObjectURL(videoFile);
@@ -33,7 +35,7 @@ export default function WatermarkSelector({
 
   // 캔버스에 비디오 프레임과 박스 그리기
   useEffect(() => {
-    if (!canvasRef.current || !videoRef.current) return;
+    if (!canvasRef.current || !videoRef.current || !isVideoLoaded) return;
 
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -41,6 +43,12 @@ export default function WatermarkSelector({
     if (!ctx) return;
 
     const draw = () => {
+      // 비디오 크기에 맞춰 캔버스 크기 조정
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
@@ -57,13 +65,20 @@ export default function WatermarkSelector({
         // 라벨
         ctx.fillStyle = "#ef4444";
         ctx.font = "bold 16px Arial";
-        ctx.fillText("워터마크 영역", selectedBox.x, selectedBox.y - 5);
+        ctx.fillText("워터마크 영역", selectedBox.x, selectedBox.y - 10);
       }
+
+      animationFrameRef.current = requestAnimationFrame(draw);
     };
 
-    const interval = setInterval(draw, 50);
-    return () => clearInterval(interval);
-  }, [selectedBox]);
+    draw();
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [selectedBox, isVideoLoaded]);
 
   const getMousePos = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -126,6 +141,40 @@ export default function WatermarkSelector({
     setStartPos(null);
   };
 
+  // 빠른 선택 버튼 (일반적인 워터마크 위치)
+  const handleQuickSelect = (position: string) => {
+    if (!canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const w = Math.round(canvas.width * 0.2); // 20% 너비
+    const h = Math.round(canvas.height * 0.1); // 10% 높이
+    const padding = 20;
+
+    let box: { x: number; y: number; w: number; h: number };
+
+    switch (position) {
+      case "bottom-right":
+        box = { x: canvas.width - w - padding, y: canvas.height - h - padding, w, h };
+        break;
+      case "bottom-left":
+        box = { x: padding, y: canvas.height - h - padding, w, h };
+        break;
+      case "top-right":
+        box = { x: canvas.width - w - padding, y: padding, w, h };
+        break;
+      case "top-left":
+        box = { x: padding, y: padding, w, h };
+        break;
+      case "bottom-center":
+        box = { x: (canvas.width - w) / 2, y: canvas.height - h - padding, w, h };
+        break;
+      default:
+        return;
+    }
+
+    setSelectedBox(box);
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -147,9 +196,46 @@ export default function WatermarkSelector({
       </div>
 
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-        <p className="text-sm text-yellow-800 dark:text-yellow-200">
-          💡 <strong>사용 방법:</strong> 비디오에서 워터마크가 있는 영역을 마우스로 드래그하여 네모 박스로 선택하세요.
+        <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-3">
+          💡 <strong>사용 방법:</strong> 비디오에서 워터마크가 있는 영역을 마우스로 드래그하거나, 아래 버튼으로 빠르게 선택하세요.
         </p>
+        
+        {/* 빠른 선택 버튼 */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-yellow-700 dark:text-yellow-300">빠른 선택:</p>
+          <div className="grid grid-cols-5 gap-2">
+            <button
+              onClick={() => handleQuickSelect("top-left")}
+              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs"
+            >
+              ↖️ 좌상
+            </button>
+            <button
+              onClick={() => handleQuickSelect("top-right")}
+              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs"
+            >
+              ↗️ 우상
+            </button>
+            <button
+              onClick={() => handleQuickSelect("bottom-left")}
+              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs"
+            >
+              ↙️ 좌하
+            </button>
+            <button
+              onClick={() => handleQuickSelect("bottom-right")}
+              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs"
+            >
+              ↘️ 우하
+            </button>
+            <button
+              onClick={() => handleQuickSelect("bottom-center")}
+              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs"
+            >
+              ⬇️ 하중
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6 space-y-4">
@@ -173,22 +259,37 @@ export default function WatermarkSelector({
 
       {/* 비디오 캔버스 */}
       <div ref={containerRef} className="relative bg-black rounded-lg overflow-hidden">
+        {!isVideoLoaded && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+            <div className="text-white text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+              <p>비디오 로딩 중...</p>
+            </div>
+          </div>
+        )}
         <video
           ref={videoRef}
           src={videoUrl}
           className="w-full opacity-0 absolute"
           controls={false}
+          loop
           onLoadedMetadata={() => {
             if (videoRef.current && canvasRef.current) {
               const video = videoRef.current;
               canvasRef.current.width = video.videoWidth;
               canvasRef.current.height = video.videoHeight;
+              // 첫 프레임 표시
+              video.currentTime = 0.1;
             }
+          }}
+          onLoadedData={() => {
+            setIsVideoLoaded(true);
           }}
         />
         <canvas
           ref={canvasRef}
           className="w-full cursor-crosshair"
+          style={{ display: isVideoLoaded ? 'block' : 'none' }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -225,9 +326,14 @@ export default function WatermarkSelector({
           <h3 className="font-medium text-green-900 dark:text-green-200 mb-2">
             ✅ 워터마크 영역 선택됨
           </h3>
-          <p className="text-sm text-green-800 dark:text-green-300">
-            위치: ({selectedBox.x}, {selectedBox.y}) / 크기: {selectedBox.w} x {selectedBox.h}
-          </p>
+          <div className="grid grid-cols-2 gap-2 text-sm text-green-800 dark:text-green-300">
+            <div>
+              <span className="font-medium">위치:</span> ({Math.round(selectedBox.x)}, {Math.round(selectedBox.y)})
+            </div>
+            <div>
+              <span className="font-medium">크기:</span> {Math.round(selectedBox.w)} x {Math.round(selectedBox.h)}
+            </div>
+          </div>
         </div>
       )}
 
