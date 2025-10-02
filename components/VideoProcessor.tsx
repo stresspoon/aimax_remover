@@ -95,34 +95,38 @@ export default function VideoProcessor({
       await ffmpeg.writeFile("input.mp4", new Uint8Array(fileData));
       addLog("✅ 입력 파일 준비 완료");
 
-      // AI 추적 데이터가 있으면 타임스탬프별 필터 적용
+      // AI 추적 데이터가 있으면 모든 위치를 커버하는 박스 계산
       let filterComplex = "";
       
       if (isAiTracked && trackingData && trackingData.length > 0) {
-        addLog(`🤖 AI 추적 모드: ${trackingData.length}개 프레임 처리`);
+        addLog(`🤖 AI 추적 모드: ${trackingData.length}개 프레임에서 워터마크 발견`);
         
-        // 타임스탬프별로 다른 위치의 워터마크 제거
-        const filters: string[] = [];
+        // 모든 추적 위치를 포함하는 최대 영역 계산
+        let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
         
-        trackingData.forEach((track, idx) => {
+        trackingData.forEach((track) => {
           const { x, y, w, h } = track.box;
-          const [mins, secs] = track.ts.split(":").map(Number);
-          const timeInSeconds = mins * 60 + secs;
-          
-          if (removalMethod === "delogo") {
-            // 각 타임스탬프에서 활성화되는 delogo 필터
-            filters.push(`delogo=x=${x}:y=${y}:w=${w}:h=${h}:band=2:enable='between(t,${timeInSeconds},${timeInSeconds + 0.5})'`);
-          }
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x + w);
+          maxY = Math.max(maxY, y + h);
         });
         
+        // 10% 패딩 추가 (워터마크 완전 커버)
+        const padding = 0.1;
+        const finalX = Math.max(0, Math.floor(minX - (maxX - minX) * padding));
+        const finalY = Math.max(0, Math.floor(minY - (maxY - minY) * padding));
+        const finalW = Math.ceil((maxX - minX) * (1 + padding * 2));
+        const finalH = Math.ceil((maxY - minY) * (1 + padding * 2));
+        
+        addLog(`📦 통합 영역: x=${finalX}, y=${finalY}, w=${finalW}, h=${finalH}`);
+
         if (removalMethod === "delogo") {
-          filterComplex = filters.join(',');
-          addLog("📐 방법: delogo (타임스탬프별 추적)");
+          filterComplex = `delogo=x=${finalX}:y=${finalY}:w=${finalW}:h=${finalH}`;
+          addLog("📐 방법: delogo (모든 위치 포함)");
         } else {
-          // BoxBlur는 단순화 (첫 번째 위치만 사용)
-          const { x, y, w, h } = trackingData[0].box;
-          filterComplex = `[0:v]split[original][blur];[blur]crop=${w}:${h}:${x}:${y},boxblur=10:2[blurred];[original][blurred]overlay=${x}:${y}`;
-          addLog("📐 방법: boxblur (첫 번째 위치 기준)");
+          filterComplex = `[0:v]split[original][blur];[blur]crop=${finalW}:${finalH}:${finalX}:${finalY},boxblur=10:2[blurred];[original][blurred]overlay=${finalX}:${finalY}`;
+          addLog("📐 방법: boxblur (모든 위치 포함)");
         }
       } else {
         // 수동 모드: 고정 위치
@@ -130,8 +134,8 @@ export default function VideoProcessor({
         addLog(`🎯 워터마크 영역: x=${x}, y=${y}, w=${w}, h=${h}`);
 
         if (removalMethod === "delogo") {
-          filterComplex = `delogo=x=${x}:y=${y}:w=${w}:h=${h}:band=2`;
-          addLog("📐 방법: delogo (로고 제거 최적화)");
+          filterComplex = `delogo=x=${x}:y=${y}:w=${w}:h=${h}`;
+          addLog("📐 방법: delogo (로고 제거)");
         } else {
           filterComplex = `[0:v]split[original][blur];[blur]crop=${w}:${h}:${x}:${y},boxblur=10:2[blurred];[original][blurred]overlay=${x}:${y}`;
           addLog("📐 방법: boxblur (선택 영역만 블러)");
