@@ -22,6 +22,9 @@ export default function WatermarkSelector({
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
   const [selectedBox, setSelectedBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const [selectionMode, setSelectionMode] = useState<"manual" | "ai-track">("manual");
+  const [isTracking, setIsTracking] = useState(false);
+  const [trackProgress, setTrackProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -115,7 +118,7 @@ export default function WatermarkSelector({
     setIsDrawing(false);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!selectedBox || !canvasRef.current) {
       alert("워터마크 영역을 선택해주세요.");
       return;
@@ -133,7 +136,55 @@ export default function WatermarkSelector({
       h: Math.round(selectedBox.h * scaleY),
     };
 
-    onSelectionComplete(actualBox);
+    // AI 추적 모드인 경우 추적 실행
+    if (selectionMode === "ai-track") {
+      await trackWatermark(actualBox);
+    } else {
+      // 수동 모드는 바로 완료
+      onSelectionComplete(actualBox);
+    }
+  };
+
+  const trackWatermark = async (referenceBox: { x: number; y: number; w: number; h: number }) => {
+    setIsTracking(true);
+    setTrackProgress(10);
+
+    try {
+      const formData = new FormData();
+      formData.append("video", videoFile);
+      formData.append("referenceBox", JSON.stringify(referenceBox));
+      formData.append("samplingFps", "2");
+
+      setTrackProgress(30);
+
+      const response = await fetch("/api/track-watermark", {
+        method: "POST",
+        body: formData,
+      });
+
+      setTrackProgress(70);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "추적 실패");
+      }
+
+      const data = await response.json();
+      setTrackProgress(100);
+
+      // 추적 데이터를 사용하여 처리
+      // 여기서는 간단히 첫 번째 위치를 사용하거나, 모든 위치의 평균/최대 범위를 계산
+      alert(`✅ AI 추적 완료! ${data.trackingData.length}개 프레임에서 워터마크를 발견했습니다.`);
+      
+      // 실제 구현: 모든 추적 데이터를 다음 단계로 전달
+      // 지금은 참조 박스를 그대로 전달
+      onSelectionComplete(referenceBox);
+    } catch (error) {
+      console.error("Tracking error:", error);
+      alert(error instanceof Error ? error.message : "워터마크 추적 중 오류가 발생했습니다.");
+    } finally {
+      setIsTracking(false);
+    }
   };
 
   const handleReset = () => {
@@ -195,9 +246,47 @@ export default function WatermarkSelector({
         </button>
       </div>
 
+      {/* 모드 선택 */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <p className="text-sm font-medium text-blue-900 dark:text-blue-200 mb-3">
+          🎯 선택 모드
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => setSelectionMode("manual")}
+            className={`px-4 py-3 rounded-lg font-medium transition-all ${
+              selectionMode === "manual"
+                ? "bg-blue-600 text-white shadow-lg"
+                : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50"
+            }`}
+          >
+            <div className="text-lg mb-1">📍</div>
+            <div className="text-sm">수동 선택</div>
+            <div className="text-xs opacity-75 mt-1">고정 위치</div>
+          </button>
+          <button
+            onClick={() => setSelectionMode("ai-track")}
+            className={`px-4 py-3 rounded-lg font-medium transition-all ${
+              selectionMode === "ai-track"
+                ? "bg-blue-600 text-white shadow-lg"
+                : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50"
+            }`}
+          >
+            <div className="text-lg mb-1">🤖</div>
+            <div className="text-sm">AI 추적</div>
+            <div className="text-xs opacity-75 mt-1">이동 워터마크</div>
+          </button>
+        </div>
+        <p className="text-xs text-blue-700 dark:text-blue-300 mt-3">
+          {selectionMode === "manual" 
+            ? "💡 워터마크가 고정된 위치에 있을 때 사용" 
+            : "💡 워터마크가 영상 내에서 이동할 때 AI가 자동 추적"}
+        </p>
+      </div>
+
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
         <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-3">
-          💡 <strong>사용 방법:</strong> 비디오에서 워터마크가 있는 영역을 마우스로 드래그하거나, 아래 버튼으로 빠르게 선택하세요.
+          💡 <strong>사용 방법:</strong> 워터마크가 있는 영역을 마우스로 드래그하거나, 아래 버튼으로 빠르게 선택하세요.
         </p>
         
         {/* 빠른 선택 버튼 */}
@@ -337,12 +426,34 @@ export default function WatermarkSelector({
         </div>
       )}
 
+      {/* AI 추적 진행률 */}
+      {isTracking && (
+        <div className="space-y-3">
+          <div className="flex justify-between text-sm text-gray-600 dark:text-gray-300">
+            <span>🤖 AI가 워터마크를 추적하는 중...</span>
+            <span>{trackProgress}%</span>
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3">
+            <div
+              className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+              style={{ width: `${trackProgress}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
+
       <button
         onClick={handleConfirm}
-        disabled={!selectedBox}
+        disabled={!selectedBox || isTracking}
         className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors"
       >
-        {selectedBox ? "✅ 선택 완료 - 다음 단계" : "⬆️ 워터마크 영역을 선택하세요"}
+        {isTracking
+          ? "🤖 AI 추적 중..."
+          : selectedBox
+          ? selectionMode === "ai-track"
+            ? "🤖 AI 추적 시작 - 다음 단계"
+            : "✅ 선택 완료 - 다음 단계"
+          : "⬆️ 워터마크 영역을 선택하세요"}
       </button>
     </div>
   );

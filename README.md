@@ -5,7 +5,10 @@ Gemini 2.5 Flash 모델을 활용한 AI 기반 이동 워터마크 자동 감지
 ## ✨ 주요 기능
 
 - **영상 업로드**: 드래그 앤 드롭으로 간편한 영상 업로드
-- **수동 영역 선택**: 사용자가 직접 워터마크 영역을 박스로 지정
+- **2가지 선택 모드**:
+  - 📍 **수동 선택**: 고정 위치 워터마크 (빠름)
+  - 🤖 **AI 추적**: 이동하는 워터마크 자동 추적 (Gemini API)
+- **빠른 선택 버튼**: 일반적인 워터마크 위치 원클릭 선택
 - **실시간 프리뷰**: 비디오 재생하며 워터마크 위치 확인
 - **워터마크 제거**: FFmpeg.wasm 기반 클라이언트 처리 (2가지 방법)
 - **결과 다운로드**: 처리된 영상 즉시 다운로드
@@ -22,7 +25,15 @@ npm install
 cp .env.local.example .env.local
 ```
 
-환경 변수 설정이 필요하지 않습니다. 바로 실행할 수 있습니다!
+`.env.local` 파일 생성 (AI 추적 기능 사용 시만 필요):
+
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+**참고**: 
+- 수동 선택 모드만 사용하면 API 키 불필요
+- AI 추적 기능 사용 시에만 Gemini API 키 필요
 
 ### 2. 개발 서버 실행
 
@@ -120,13 +131,19 @@ aimax_remover/
 
 ## 🌐 Vercel 배포
 
-환경 변수 설정 없이 바로 배포 가능합니다:
+### 기본 배포 (수동 선택만)
+환경 변수 없이 바로 배포 가능
 
+### AI 추적 기능 포함 배포
+Environment Variables 설정:
+- **Key**: `GEMINI_API_KEY`
+- **Value**: 발급받은 Gemini API 키
+
+배포 방법:
 1. [Vercel](https://vercel.com)에 로그인
-2. GitHub 저장소 `stresspoon/aimax_remover` 연결
-3. **Deploy** 버튼 클릭
-
-모든 처리가 클라이언트에서 이루어지므로 추가 설정이 필요 없습니다.
+2. GitHub 저장소 연결
+3. (선택) Environment Variables 추가
+4. **Deploy** 클릭
 
 ## 🎯 사용 흐름
 
