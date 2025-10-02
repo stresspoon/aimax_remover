@@ -88,14 +88,22 @@ export default function WatermarkSelector({
     if (!canvas) return { x: 0, y: 0 };
 
     const rect = canvas.getBoundingClientRect();
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
+    // Canvas의 실제 크기와 표시 크기 비율 계산
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+    
+    console.log('Mouse pos:', { x, y, canvasWidth: canvas.width, canvasHeight: canvas.height });
+    
+    return { x, y };
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
     const pos = getMousePos(e);
+    console.log('Mouse down at:', pos);
     setIsDrawing(true);
     setStartPos(pos);
     setSelectedBox(null);
@@ -103,6 +111,7 @@ export default function WatermarkSelector({
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing || !startPos) return;
+    e.preventDefault();
 
     const pos = getMousePos(e);
     const box = {
@@ -111,10 +120,13 @@ export default function WatermarkSelector({
       w: Math.abs(pos.x - startPos.x),
       h: Math.abs(pos.y - startPos.y),
     };
+    console.log('Drawing box:', box);
     setSelectedBox(box);
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    console.log('Mouse up, final box:', selectedBox);
     setIsDrawing(false);
   };
 
@@ -192,39 +204,6 @@ export default function WatermarkSelector({
     setStartPos(null);
   };
 
-  // 빠른 선택 버튼 (일반적인 워터마크 위치)
-  const handleQuickSelect = (position: string) => {
-    if (!canvasRef.current) return;
-
-    const canvas = canvasRef.current;
-    const w = Math.round(canvas.width * 0.2); // 20% 너비
-    const h = Math.round(canvas.height * 0.1); // 10% 높이
-    const padding = 20;
-
-    let box: { x: number; y: number; w: number; h: number };
-
-    switch (position) {
-      case "bottom-right":
-        box = { x: canvas.width - w - padding, y: canvas.height - h - padding, w, h };
-        break;
-      case "bottom-left":
-        box = { x: padding, y: canvas.height - h - padding, w, h };
-        break;
-      case "top-right":
-        box = { x: canvas.width - w - padding, y: padding, w, h };
-        break;
-      case "top-left":
-        box = { x: padding, y: padding, w, h };
-        break;
-      case "bottom-center":
-        box = { x: (canvas.width - w) / 2, y: canvas.height - h - padding, w, h };
-        break;
-      default:
-        return;
-    }
-
-    setSelectedBox(box);
-  };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -285,46 +264,9 @@ export default function WatermarkSelector({
       </div>
 
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-        <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-3">
-          💡 <strong>사용 방법:</strong> 워터마크가 있는 영역을 마우스로 드래그하거나, 아래 버튼으로 빠르게 선택하세요.
+        <p className="text-sm text-yellow-800 dark:text-yellow-200">
+          💡 <strong>사용 방법:</strong> 비디오에서 워터마크가 있는 영역을 마우스로 드래그하여 선택하세요.
         </p>
-        
-        {/* 빠른 선택 버튼 */}
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-yellow-700 dark:text-yellow-300">빠른 선택:</p>
-          <div className="grid grid-cols-5 gap-2">
-            <button
-              onClick={() => handleQuickSelect("top-left")}
-              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs"
-            >
-              ↖️ 좌상
-            </button>
-            <button
-              onClick={() => handleQuickSelect("top-right")}
-              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs"
-            >
-              ↗️ 우상
-            </button>
-            <button
-              onClick={() => handleQuickSelect("bottom-left")}
-              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs"
-            >
-              ↙️ 좌하
-            </button>
-            <button
-              onClick={() => handleQuickSelect("bottom-right")}
-              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs"
-            >
-              ↘️ 우하
-            </button>
-            <button
-              onClick={() => handleQuickSelect("bottom-center")}
-              className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs"
-            >
-              ⬇️ 하중
-            </button>
-          </div>
-        </div>
       </div>
 
       <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6 space-y-4">
@@ -377,8 +319,11 @@ export default function WatermarkSelector({
         />
         <canvas
           ref={canvasRef}
-          className="w-full cursor-crosshair"
-          style={{ display: isVideoLoaded ? 'block' : 'none' }}
+          className="w-full cursor-crosshair select-none"
+          style={{ 
+            display: isVideoLoaded ? 'block' : 'none',
+            touchAction: 'none'
+          }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
