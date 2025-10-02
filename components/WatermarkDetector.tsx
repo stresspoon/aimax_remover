@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { Detection } from "@/app/page";
 
 type Props = {
@@ -23,77 +22,34 @@ export default function WatermarkDetector({
   const [error, setError] = useState<string | null>(null);
 
   const detectWatermarks = async () => {
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-    if (!apiKey) {
-      setError("Gemini API 키가 설정되지 않았습니다. .env.local 파일을 확인하세요.");
-      return;
-    }
-
     setIsDetecting(true);
     setProgress(10);
     setError(null);
 
     try {
-      // 비디오 파일을 Base64로 변환
-      const reader = new FileReader();
-      const videoData = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(videoFile);
-      });
+      // FormData 생성
+      const formData = new FormData();
+      formData.append("video", videoFile);
+      formData.append("samplingFps", samplingFps.toString());
 
       setProgress(30);
 
-      // Gemini API 호출
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+      // 서버 API 호출
+      const response = await fetch("/api/detect-watermark", {
+        method: "POST",
+        body: formData,
+      });
 
-      const prompt = `
-Analyze this entire video for watermarks or logos that appear throughout the video.
-Sample the video at ${samplingFps} FPS (frames per second).
+      setProgress(70);
 
-Return a JSON array of detections with the following format:
-[
-  {
-    "ts": "MM:SS",
-    "boxes": [
-      {
-        "label": "watermark",
-        "box_2d": [ymin, xmin, ymax, xmax],
-        "score": 0.95
-      }
-    ]
-  }
-]
-
-Coordinates should be normalized to 0-1000 range.
-Only detect watermarks, logos, or text overlays that appear consistently across multiple frames.
-`;
-
-      setProgress(50);
-
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            mimeType: videoFile.type,
-            data: videoData.split(",")[1],
-          },
-        },
-      ]);
-
-      setProgress(80);
-
-      const response = await result.response;
-      const text = response.text();
-
-      // JSON 파싱
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) {
-        throw new Error("API 응답에서 JSON을 찾을 수 없습니다.");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "API 요청 실패");
       }
 
-      const detections: Detection[] = JSON.parse(jsonMatch[0]);
+      const data = await response.json();
+      const detections: Detection[] = data.detections;
+
       setProgress(100);
 
       setTimeout(() => {

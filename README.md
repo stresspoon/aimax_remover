@@ -25,8 +25,10 @@ cp .env.local.example .env.local
 `.env.local` 파일에 Gemini API 키를 입력하세요:
 
 ```env
-NEXT_PUBLIC_GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
+
+**보안**: `NEXT_PUBLIC_` 접두사를 사용하지 않아 API 키가 서버에서만 사용되고 클라이언트에 노출되지 않습니다.
 
 ### 2. 개발 서버 실행
 
@@ -90,12 +92,15 @@ await ffmpeg.exec([
 ```
 aimax_remover/
 ├── app/
+│   ├── api/
+│   │   └── detect-watermark/
+│   │       └── route.ts      # 워터마크 감지 API (서버)
 │   ├── page.tsx              # 메인 페이지 (단계 관리)
 │   ├── layout.tsx            # 레이아웃
 │   └── globals.css           # 전역 스타일
 ├── components/
 │   ├── VideoUploader.tsx     # 영상 업로드
-│   ├── WatermarkDetector.tsx # AI 감지
+│   ├── WatermarkDetector.tsx # AI 감지 (클라이언트)
 │   ├── WatermarkEditor.tsx   # 편집 UI
 │   └── VideoProcessor.tsx    # 워터마크 제거
 ├── utils/
@@ -127,6 +132,23 @@ aimax_remover/
 1. [Google AI Studio](https://makersuite.google.com/app/apikey) 방문
 2. API 키 생성
 3. `.env.local` 파일에 추가
+
+## 🌐 Vercel 배포
+
+### 환경 변수 설정
+
+Vercel 대시보드에서 다음 환경 변수를 설정하세요:
+
+- **Key**: `GEMINI_API_KEY` (⚠️ `NEXT_PUBLIC_` 접두사 없이!)
+- **Value**: 발급받은 Gemini API 키
+
+**중요**: `NEXT_PUBLIC_` 접두사를 사용하지 않음으로써 API 키가 서버에서만 사용되고 브라우저에 노출되지 않습니다.
+
+### 배포 방법
+
+1. Vercel에서 GitHub 저장소 연결
+2. Environment Variables에 `GEMINI_API_KEY` 추가
+3. Deploy 버튼 클릭
 
 ## 🚧 향후 개발
 
