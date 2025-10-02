@@ -35,10 +35,10 @@ export default function VideoProcessor({
   const [log, setLog] = useState<string[]>([]);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
   const ffmpegRef = useRef<FFmpeg | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [removalMethod, setRemovalMethod] = useState<"delogo" | "boxblur">("delogo");
-  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     loadFFmpeg();
@@ -277,72 +277,98 @@ export default function VideoProcessor({
         </div>
       )}
 
-      {/* 미리보기 영상 */}
-      {previewUrl && (
-        <div className="space-y-4">
-          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-            <h3 className="font-medium text-green-900 dark:text-green-200 mb-3">
-              ✅ 처리 완료! 결과 미리보기
-            </h3>
-            <video
-              src={previewUrl}
-              controls
-              loop
-              preload="auto"
-              playsInline
-              className="w-full rounded-lg bg-black"
-              onError={(e) => {
-                console.error("Video preview error:", e);
-                addLog("⚠️ 미리보기 로드 실패 (다운로드는 가능)");
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {!downloadUrl ? (
-        <button
-          onClick={processVideo}
-          disabled={isProcessing || !isLoaded}
-          className="w-full py-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors"
-        >
-          {!isLoaded
-            ? "FFmpeg 로딩 중..."
-            : isProcessing
-            ? "처리 중..."
-            : "🚀 워터마크 제거 시작"}
-        </button>
-      ) : (
-        <div className="space-y-3">
+      {/* 처리 완료 메시지 */}
+      {downloadUrl && (
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+          <h3 className="font-medium text-green-900 dark:text-green-200 mb-2">
+            ✅ 처리 완료!
+          </h3>
+          <p className="text-sm text-green-800 dark:text-green-300 mb-3">
+            워터마크가 제거되었습니다. 다운로드하여 결과를 확인하세요.
+          </p>
+          
+          {/* 미리보기 토글 버튼 */}
           <button
-            onClick={handleDownload}
-            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors"
+            onClick={() => setShowPreview(!showPreview)}
+            className="text-sm text-green-700 dark:text-green-300 hover:underline"
           >
-            ⬇️ 처리된 영상 다운로드
+            {showPreview ? "📹 미리보기 숨기기" : "📹 브라우저에서 미리보기 (선택사항)"}
           </button>
-          <button
-            onClick={onComplete}
-            className="w-full py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-colors"
-          >
-            🔄 새 영상 처리하기
-          </button>
-        </div>
-      )}
-
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-        <h3 className="font-medium text-blue-900 dark:text-blue-200 mb-2">💡 처리 방법 안내</h3>
-        <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
-          <li>• <strong>Delogo</strong>: 주변 픽셀로 워터마크 영역을 자연스럽게 채움</li>
-          <li>• <strong>BoxBlur</strong>: 선택한 영역만 강력한 블러 처리 (배경은 선명)</li>
-          {isAiTracked && (
-            <li className="text-purple-700 dark:text-purple-300">
-              • <strong>🤖 AI 추적 모드</strong>: 이동하는 워터마크를 자동으로 따라가며 제거
-            </li>
+          
+          {/* 선택적 미리보기 */}
+          {showPreview && previewUrl && (
+            <div className="mt-4">
+              <video
+                key={previewUrl}
+                controls
+                loop
+                preload="metadata"
+                playsInline
+                muted
+                className="w-full rounded-lg bg-black"
+                onError={(e) => {
+                  console.error("Video preview error:", e);
+                  addLog("⚠️ 미리보기 재생 실패 - 다운로드 후 확인해주세요");
+                }}
+              >
+                <source src={previewUrl} type="video/mp4" />
+                브라우저가 비디오 재생을 지원하지 않습니다. 다운로드하여 확인해주세요.
+              </video>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                💡 미리보기가 재생되지 않으면 다운로드하여 확인하세요
+              </p>
+            </div>
           )}
-          <li>• 처리 후 미리보기로 결과 확인 가능</li>
-          <li>• 만족스러우면 다운로드, 아니면 다시 처리</li>
-        </ul>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {!downloadUrl ? (
+          <button
+            onClick={processVideo}
+            disabled={isProcessing || !isLoaded}
+            className="w-full py-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors"
+          >
+            {!isLoaded
+              ? "FFmpeg 로딩 중..."
+              : isProcessing
+              ? "처리 중..."
+              : "🚀 워터마크 제거 시작"}
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={handleDownload}
+              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors"
+            >
+              ⬇️ 처리된 영상 다운로드
+            </button>
+            <button
+              onClick={onComplete}
+              className="w-full py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-colors"
+            >
+              🔄 새 영상 처리하기
+            </button>
+          </>
+        )}
       </div>
+
+      {!downloadUrl && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <h3 className="font-medium text-blue-900 dark:text-blue-200 mb-2">💡 처리 방법 안내</h3>
+          <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
+            <li>• <strong>Delogo</strong>: 주변 픽셀로 워터마크 영역을 자연스럽게 채움</li>
+            <li>• <strong>BoxBlur</strong>: 선택한 영역만 강력한 블러 처리 (배경은 선명)</li>
+            {isAiTracked && (
+              <li className="text-purple-700 dark:text-purple-300">
+                • <strong>🤖 AI 추적 모드</strong>: 이동하는 워터마크를 자동으로 따라가며 제거
+              </li>
+            )}
+            <li>• 처리 완료 후 다운로드하여 결과 확인</li>
+            <li>• 만족스럽지 않으면 뒤로가기 후 다시 처리</li>
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
