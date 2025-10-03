@@ -147,8 +147,35 @@ export default function VideoProcessor({
         }
       } else {
         // 수동 모드: 고정 위치
-        const { x, y, w, h } = selectedBox;
+        let { x, y, w, h } = selectedBox;
+        
+        // 비디오 해상도 범위 내로 제한
+        const videoWidth = videoResolution.width;
+        const videoHeight = videoResolution.height;
+        
+        // 좌표 검증 및 조정
+        x = Math.max(0, Math.floor(x));
+        y = Math.max(0, Math.floor(y));
+        w = Math.max(1, Math.floor(w));
+        h = Math.max(1, Math.floor(h));
+        
+        // 프레임 경계 체크
+        if (x + w > videoWidth) {
+          w = videoWidth - x;
+          addLog(`⚠️ 너비 조정: ${videoWidth - x}px (프레임 경계)`);
+        }
+        if (y + h > videoHeight) {
+          h = videoHeight - y;
+          addLog(`⚠️ 높이 조정: ${videoHeight - y}px (프레임 경계)`);
+        }
+        
+        // 최종 검증
+        if (x < 0 || y < 0 || w < 1 || h < 1 || x + w > videoWidth || y + h > videoHeight) {
+          throw new Error(`유효하지 않은 좌표: x=${x}, y=${y}, w=${w}, h=${h} (비디오: ${videoWidth}x${videoHeight})`);
+        }
+        
         addLog(`🎯 워터마크 영역: x=${x}, y=${y}, w=${w}, h=${h}`);
+        addLog(`📺 비디오 크기: ${videoWidth}x${videoHeight}`);
 
         if (removalMethod === "delogo") {
           filterComplex = `delogo=x=${x}:y=${y}:w=${w}:h=${h}`;
