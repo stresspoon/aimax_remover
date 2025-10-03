@@ -114,12 +114,29 @@ export default function VideoProcessor({
         
         // 10% 패딩 추가 (워터마크 완전 커버)
         const padding = 0.1;
-        const finalX = Math.max(0, Math.floor(minX - (maxX - minX) * padding));
-        const finalY = Math.max(0, Math.floor(minY - (maxY - minY) * padding));
-        const finalW = Math.ceil((maxX - minX) * (1 + padding * 2));
-        const finalH = Math.ceil((maxY - minY) * (1 + padding * 2));
+        let finalX = Math.max(0, Math.floor(minX - (maxX - minX) * padding));
+        let finalY = Math.max(0, Math.floor(minY - (maxY - minY) * padding));
+        let finalW = Math.ceil((maxX - minX) * (1 + padding * 2));
+        let finalH = Math.ceil((maxY - minY) * (1 + padding * 2));
+        
+        // 비디오 해상도 범위 내로 제한 (중요!)
+        const videoWidth = videoResolution.width;
+        const videoHeight = videoResolution.height;
+        
+        // 박스가 프레임을 벗어나지 않도록 클리핑
+        if (finalX + finalW > videoWidth) {
+          finalW = videoWidth - finalX;
+        }
+        if (finalY + finalH > videoHeight) {
+          finalH = videoHeight - finalY;
+        }
+        
+        // 최소 크기 보장 (1px 이상)
+        finalW = Math.max(1, finalW);
+        finalH = Math.max(1, finalH);
         
         addLog(`📦 통합 영역: x=${finalX}, y=${finalY}, w=${finalW}, h=${finalH}`);
+        addLog(`📺 비디오 크기: ${videoWidth}x${videoHeight}`);
 
         if (removalMethod === "delogo") {
           filterComplex = `delogo=x=${finalX}:y=${finalY}:w=${finalW}:h=${finalH}`;
